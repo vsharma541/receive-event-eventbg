@@ -9,65 +9,36 @@ provider:
   region: us-east-1
 
 functions:
-  InvoiceProcessingFunction:
+  EBReceiverLambda:
     handler: recHandler.receiveEvent
     events:
       - eventBridge:
           useCloudFormation: true
-          eventBus: !Ref InvoiceProcessingEventBus
+          eventBus: !Ref ReceiverEventBus
           pattern:
-              source:
-                - my.application
-              detail-type:
-                - MyCustomDetail
+            source:
+              - my.application
+            detail-type:
+              - MyCustomDetail
 
 resources:
   Resources:
     # This is the receiving invoice processing event bus in account C.
-    InvoiceProcessingEventBus: 
+    ReceiverEventBus: 
       Type: AWS::Events::EventBus
       Properties: 
-        Name: invoice-processing-event-bus
-
-    # This is the rule that the invoice processing service creates on the central event bus
-    InvoiceProcessingRule:
-      Type: AWS::Events::Rule
+        Name: my-receiver-eb
+    
+    ReceiverEventBusPolicy: 
+      Type: AWS::Events::EventBusPolicy
       Properties:
-        Name: InvoiceProcessingNewOrderCreatedSubscription
-        Description: Cross account rule created by Invoice Processing service
-        EventBusName: arn:aws:events:us-east-1:233886345769:event-bus/MyNewCustomEventBus
-        EventPattern:
-          source:
-            - my.application
-          detail-type:
-            - MyCustomDetail
-        State: ENABLED
-        Targets: 
-          - Id: SendEventsToInvoiceProcessingEventBus
-            Arn: !GetAtt InvoiceProcessingEventBus.Arn
-            RoleArn: !GetAtt CentralEventBusToInvoiceProcessingEventBusRole.Arn
-
-    # This IAM role allows EventBridge to assume the permissions necessary to send events to the 
-    # Invoice Processing event bus, without you having to create an additional resource policy 
-    # on the Invoice Processing event bus.
-    CentralEventBusToInvoiceProcessingEventBusRole:
-      Type: 'AWS::IAM::Role'
-      Properties:
-        AssumeRolePolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Principal:
-                Service:
-                - events.amazonaws.com
-              Action:
-                - 'sts:AssumeRole'
-        Path: /
-        Policies:
-          - PolicyName: PutEventsOnInvoiceProcessingEventBus
-            PolicyDocument:
-              Version: '2012-10-17'
-              Statement:
-                - Effect: Allow
-                  Action: 'events:PutEvents'
-                  Resource: !GetAtt InvoiceProcessingEventBus.Arn
+          EventBusName: !Ref ReceiverEventBus
+          StatementId: ReceiverEventBusPolicyForCrossAccount
+          Statement: 
+              Effect: Allow
+              # assign role of sender eventbus as principal
+              Principal: 
+                  AWS: arn:aws:iam::233886345769:role/vsr-sender-acc-eb-role-PROD
+              Action: 
+                  - events:PutEvents
+              Resource: !GetAtt ReceiverEventBus.Arn
